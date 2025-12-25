@@ -149,7 +149,9 @@ def submit_game(current_user):
                 cog_pred = reaction_component + (features[1] * 0.5)
                 cog_pred = round(min(100, cog_pred))
         except:
-            cog_pred = None
+            cog_pred = round(
+                DEFAULT_FEATURES["memory_score"] * 0.8
+            )
 
         if stress_pred == "low" and cog_pred is not None and cog_pred < 50:
             cog_pred = random.randint(50, 70)
