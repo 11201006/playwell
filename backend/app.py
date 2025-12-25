@@ -33,9 +33,11 @@ def create_app():
     def root():
         return {"message": "PlayWell Backend Running"}
     
+    from sqlalchemy import text
+    
     @app.route("/health/db")
     def db_health():
-        db.session.execute("SELECT 1")
+        db.session.execute(text("SELECT 1"))
         return {"db": "ok"}
 
     return app
