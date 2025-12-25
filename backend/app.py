@@ -16,12 +16,7 @@ def create_app():
 
     CORS(
         app,
-        resources={r"/api/*": {
-            "origins": [
-                "http://localhost:5173",
-                "https://playwell.vercel.app"
-            ]
-        }},
+        resources={r"/api/*": {"origins": "*"}},
         supports_credentials=True
     )
 
