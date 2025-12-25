@@ -1,6 +1,5 @@
 from flask import Flask
-from flask_cors import CORS
-from flask_migrate import Migrate   
+from flask_cors import CORS  
 from .database import init_db, db
 from .routes.auth_routes import auth_bp
 from .routes.game_routes import game_bp
@@ -14,7 +13,6 @@ def create_app():
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 
     init_db(app)
-    Migrate(app, db)
 
     CORS(
         app,
@@ -34,5 +32,10 @@ def create_app():
     @app.route("/")
     def root():
         return {"message": "PlayWell Backend Running"}
+    
+    @app.route("/health/db")
+    def db_health():
+        db.session.execute("SELECT 1")
+        return {"db": "ok"}
 
     return app
