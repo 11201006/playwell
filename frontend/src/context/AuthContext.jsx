@@ -65,11 +65,12 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem("pw_token");
     localStorage.removeItem("user_id");
-
+    
     setAuthToken(null);
     setLoggedIn(false);
     setUser(null);
-  };
+    setLoading(false);
+};
 
   const updateProfile = (newData) => {
     setUser((prev) => ({ ...prev, ...newData }));

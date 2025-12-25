@@ -29,17 +29,13 @@ export default function Login() {
     const res = await api.post("/auth/login", { email, password });
     const { token, user } = res.data;
 
-    // Simpan token & userId ke AuthContext
     login(token, user);
 
-    // SIMPAN userId agar Profile.jsx bisa mengaksesnya
     localStorage.setItem("userId", user.id);
 
-    // SIMPAN EMAIL & PASSWORD OTOMATIS
     localStorage.setItem("saved_email", email);
     localStorage.setItem("saved_password", password);
 
-    // REDIRECT
     navigate("/dashboard");
 
   } catch (err) {
