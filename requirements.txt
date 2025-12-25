@@ -1,6 +1,7 @@
 Flask
 flask-cors
 Flask-SQLAlchemy
+flask-migrate
 scikit-learn
 pandas
 joblib
