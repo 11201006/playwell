@@ -20,7 +20,6 @@ export default function History() {
       })
       .then((res) => {
         const data = res.data || [];
-        // Sort newest → oldest
         const sorted = data.sort(
           (a, b) => new Date(b.created_at) - new Date(a.created_at)
         );
@@ -45,8 +44,13 @@ export default function History() {
 
       <div className="space-y-4 max-w-3xl mx-auto">
         {rows.map((r, i) => {
-          const focus = r.focus_score ?? r.cognitive_score;
-
+          const focus =
+          typeof r.focus_score === "number"
+          ? r.focus_score
+          : typeof r.cognitive_score === "number"
+          ? r.cognitive_score
+          : null;
+          
           let recList = r.recommendations;
           try {
             if (typeof recList === "string") {
@@ -54,48 +58,36 @@ export default function History() {
             }
           } catch {}
           if (Array.isArray(recList)) recList = recList.join(", ");
-
+          
           return (
-            <div
-              key={i}
-              className="bg-white p-5 rounded-2xl shadow hover:shadow-md transition"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-semibold text-gray-800">
-                    Game: {r.game_type}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {new Date(r.created_at).toLocaleString()}
-                  </div>
+          <div key={i} className="bg-white p-5 rounded-2xl shadow">
+            <div className="flex justify-between">
+              <div>
+                <div className="font-semibold">
+                  Game: {r.game_type}
                 </div>
-
-                <div className="text-right text-gray-700">
-                  <div>
-                    Stress:{" "}
-                    <span className="font-bold capitalize">
-                      {r.stress_level}
-                    </span>
-                  </div>
-                  <div>
-                    Focus:{" "}
-                    {focus !== undefined ? (
-                      <b>{focus.toFixed(2)}</b>
-                    ) : (
-                      "-"
-                    )}
-                  </div>
+                <div className="text-sm text-gray-500">
+                  {new Date(r.created_at).toLocaleString()}
                 </div>
               </div>
-
-              {recList && (
-                <p className="mt-3 text-sm text-gray-600 leading-relaxed">
-                  {recList}
-                </p>
-              )}
+              <div className="text-right">
+                <div>
+                  Stress: <b className="capitalize">{r.stress_level || "-"}</b>
+                </div>
+                <div>
+                  Focus: {focus !== null ? <b>{focus.toFixed(2)}</b> : "-"}
+                </div>
+              </div>
             </div>
-          );
-        })}
+            
+            {recList && (
+              <p className="mt-3 text-sm text-gray-600">
+                {recList}
+              </p>
+            )}
+          </div>
+        );
+      })}
       </div>
     </div>
   );

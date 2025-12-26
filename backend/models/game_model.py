@@ -7,19 +7,17 @@ class GameSession(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    # FK ke user
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
     game_type = db.Column(db.String(50), nullable=False)
 
-    reaction_time_avg = db.Column(db.Float)
-    memory_score = db.Column(db.Float)
+    reaction_time_avg = db.Column(db.Float, nullable=True)
+    memory_score = db.Column(db.Float, nullable=True)
     errors = db.Column(db.Integer)
     duration = db.Column(db.Float)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relasi One-to-One ke AnalysisResult
     analysis = db.relationship(
         "AnalysisResult",
         backref="session",
