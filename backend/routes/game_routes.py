@@ -1,91 +1,67 @@
 from flask import Blueprint, request, jsonify
 from backend.database import db
 from backend.models.game_model import GameSession, AnalysisResult
-from backend.models.user_model import User
 from backend.utils.auth_middleware import token_required
-import joblib, json, os, statistics, random
 
-game_bp = Blueprint("game_bp", "game_bp")
+import joblib, json, os, statistics
+
+game_bp = Blueprint("game_bp", __name__)
 
 ML_DIR = os.path.join(os.path.dirname(__file__), "..", "ml")
 MODEL_STRESS_PATH = os.path.join(ML_DIR, "model_stress.pkl")
 MODEL_COG_PATH = os.path.join(ML_DIR, "model_cognitive.pkl")
-LABEL_ENCODER_PATH = os.path.join(ML_DIR, "label_encoder_stress.pkl")
 
 _model_stress = joblib.load(MODEL_STRESS_PATH) if os.path.exists(MODEL_STRESS_PATH) else None
 _model_cog = joblib.load(MODEL_COG_PATH) if os.path.exists(MODEL_COG_PATH) else None
-_label_encoder = joblib.load(LABEL_ENCODER_PATH) if os.path.exists(LABEL_ENCODER_PATH) else None
 
-DEFAULT_FEATURES = {"reaction_avg": 300.0, "memory_score": 50.0, "age": 25, "gender": 0}
+DEFAULT_REACTION = 300.0
+DEFAULT_MEMORY = 50.0
+DEFAULT_AGE = 25
+DEFAULT_GENDER = "male"
 
-REACTION_GAMES = {
-    "Reaction Test",
-    "Visual Search",
-}
+REACTION_GAMES = {"Reaction Test", "Visual Search"}
+MEMORY_GAMES = {"Memory Test", "Pattern Memory"}
+DUAL_GAMES = {"Dual Task"}
 
-MEMORY_GAMES = {
-    "Memory Test",
-    "Pattern Memory",
-}
+def avg_or_default(values, default):
+    values = [v for v in values if v is not None]
+    return float(statistics.mean(values)) if values else default
 
-DUAL_GAMES = {
-    "Dual Task",
-}
+def build_model_input(reaction, memory, age, gender):
+    return [{
+        "Reaction_Time": reaction,
+        "Memory_Test_Score": memory,
+        "Age": age,
+        "Gender": gender
+    }]
 
-def build_features(reaction, memory, age, gender_enc):
-    age = age if age > 0 else DEFAULT_FEATURES["age"]
 
-    return [[
-        reaction,
-        memory,
-        age,
-        gender_enc,
-        reaction / age,
-        memory / age,
-        reaction * memory
-    ]]
-    
-def avg_or_default(vals, default):
-    vals = [v for v in vals if v is not None]
-    return float(statistics.mean(vals)) if vals else default
+def stress_label_to_text(label):
+    return {0: "low", 1: "medium", 2: "high"}.get(int(label), "medium")
 
 @game_bp.route("/game/predict", methods=["POST"])
 def predict_game():
     try:
         data = request.json or {}
 
-        reaction_avg = float(data.get("reaction_avg") or DEFAULT_FEATURES["reaction_avg"])
-        memory_score = float(data.get("memory_score") or DEFAULT_FEATURES["memory_score"])
-        age = float(data.get("age") or DEFAULT_FEATURES["age"])
-        gender_enc = 1 if data.get("gender", "Male") == "Female" else 0
+        reaction = float(data.get("reaction_avg") or DEFAULT_REACTION)
+        memory = float(data.get("memory_score") or DEFAULT_MEMORY)
+        age = float(data.get("age") or DEFAULT_AGE)
+        gender = str(data.get("gender") or DEFAULT_GENDER).lower()
 
-        X = build_features(
-            reaction_avg=reaction_avg,
-            memory_score=memory_score,
-            age=age,
-            gender_enc=gender_enc
-        )
+        X = build_model_input(reaction, memory, age, gender)
 
-        stress_pred = "medium"
-        try:
-            if _model_stress:
-                stress_cont = float(_model_stress.predict(X)[0])
-                if stress_cont <= 3:
-                    stress_pred = "low"
-                elif stress_cont <= 6:
-                    stress_pred = "medium"
-                else:
-                    stress_pred = "high"
-        except Exception as e:
-            print("STRESS MODEL ERROR:", e)
+        if _model_stress:
+            stress_label = int(_model_stress.predict(X)[0])
+            stress_pred = stress_label_to_text(stress_label)
+        else:
+            stress_pred = "medium"
 
-        try:
-            cog_pred = float(_model_cog.predict(X)[0]) if _model_cog else 50
-        except Exception as e:
-            print("COG MODEL ERROR:", e)
+        if _model_cog:
+            cog_raw = float(_model_cog.predict(X)[0])
+            cog_pred = round(max(0, min(100, cog_raw * 100)))
+        else:
             cog_pred = 50
-
-        cog_pred = int(max(0, min(100, round(cog_pred))))
 
         if stress_pred == "high" or cog_pred < 40:
             rec = [
@@ -124,22 +100,22 @@ def submit_game(current_user):
         raw_reaction = data.get("reaction_avg")
         raw_memory = data.get("memory_score")
 
-        reaction_time_avg = None
-        memory_score = None
-        
+        reaction = None
+        memory = None
+
         if game_type in REACTION_GAMES or game_type in DUAL_GAMES:
             if raw_reaction is not None:
-                reaction_time_avg = float(raw_reaction)
-                
+                reaction = float(raw_reaction)
+
         if game_type in MEMORY_GAMES or game_type in DUAL_GAMES:
             if raw_memory is not None:
-                memory_score = float(raw_memory)
+                memory = float(raw_memory)
 
         session = GameSession(
             user_id=current_user.id,
             game_type=game_type,
-            reaction_time_avg=reaction_time_avg,
-            memory_score=memory_score,
+            reaction_time_avg=reaction,
+            memory_score=memory,
             errors=int(meta.get("errors", 0)),
             duration=(duration_ms or 0) / 1000.0
         )
@@ -147,63 +123,26 @@ def submit_game(current_user):
         db.session.add(session)
         db.session.commit()
 
-        past_sessions = GameSession.query.filter_by(
-            user_id=current_user.id
-        ).all()
+        past = GameSession.query.filter_by(user_id=current_user.id).all()
 
-        ml_reaction = (
-            reaction_time_avg
-            if reaction_time_avg is not None
-            else avg_or_default(
-                [s.reaction_time_avg for s in past_sessions],
-                DEFAULT_FEATURES["reaction_avg"]
-            )
+        reaction_final = reaction if reaction is not None else avg_or_default(
+            [s.reaction_time_avg for s in past], DEFAULT_REACTION
         )
 
-        ml_memory = (
-            memory_score
-            if memory_score is not None
-            else avg_or_default(
-                [s.memory_score for s in past_sessions],
-                DEFAULT_FEATURES["memory_score"]
-            )
+        memory_final = memory if memory is not None else avg_or_default(
+            [s.memory_score for s in past], DEFAULT_MEMORY
         )
 
-        age = current_user.age or DEFAULT_FEATURES["age"]
-        gender_enc = 1 if current_user.gender == "Female" else 0
+        age = current_user.age or DEFAULT_AGE
+        gender = (current_user.gender or DEFAULT_GENDER).lower()
 
-        rt_per_age = ml_reaction / age
-        mem_per_age = ml_memory / age
-        rt_x_mem = ml_reaction * ml_memory
+        X = build_model_input(reaction_final, memory_final, age, gender)
 
-        features = [[
-            ml_reaction,
-            ml_memory,
-            age,
-            gender_enc,
-            rt_per_age,
-            mem_per_age,
-            rt_x_mem
-        ]]
+        stress_label = int(_model_stress.predict(X)[0]) if _model_stress else 1
+        stress_pred = stress_label_to_text(stress_label)
 
-        try:
-            stress_cont = _model_stress.predict(features)[0]
-            if stress_cont <= 3:
-                stress_pred = "low"
-            elif stress_cont <= 6:
-                stress_pred = "medium"
-            else:
-                stress_pred = "high"
-        except Exception as e:
-            print("Stress model error:", e)
-            stress_pred = "unknown"
-
-        try:
-            cog_pred = float(_model_cog.predict(features)[0])
-            cog_pred = round(min(100, max(0, cog_pred)))
-        except Exception as e:
-            print("Cognitive model error:", e)
-            cog_pred = round(ml_memory * 0.8)
+        cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
+        cog_pred = round(max(0, min(100, cog_raw * 100)))
 
         if stress_pred == "high" or cog_pred < 40:
             rec = [
@@ -236,6 +175,6 @@ def submit_game(current_user):
             "recommendations": rec
         })
 
-    except Exception as exc:
-        print("submit_game error:", exc)
+    except Exception as e:
+        print("submit_game error:", e)
         return jsonify({"error": "Internal server error"}), 500

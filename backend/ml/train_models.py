@@ -1,182 +1,190 @@
 import os
-import pandas as pd
 import numpy as np
+import pandas as pd
 import joblib
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import (
-    classification_report,
-    accuracy_score,
-    mean_squared_error
-)
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    mean_squared_error,
+    r2_score
+)
 
-from xgboost import XGBRegressor
+from xgboost import XGBClassifier, XGBRegressor
 
-# ======================================================
-# PATH
-# ======================================================
 BASE_DIR = os.path.dirname(__file__)
 DATA_CSV = os.path.join(BASE_DIR, "human_cognitive_performance.csv")
 OUT_DIR = BASE_DIR
+RANDOM_STATE = 42
 
 df = pd.read_csv(DATA_CSV)
 
-# ======================================================
-# REQUIRED COLUMNS
-# ======================================================
-required_cols = [
+REQUIRED = [
     "Reaction_Time",
     "Memory_Test_Score",
     "Stress_Level",
     "Cognitive_Score",
-    "Age",
-    "Gender"
 ]
 
-for c in required_cols:
+for c in REQUIRED:
     if c not in df.columns:
-        raise Exception(f"Missing required column: {c}")
+        raise Exception(f"❌ Missing column: {c}")
 
-# ======================================================
-# 1️⃣ NORMALIZE GENDER
-# ======================================================
-def normalize_gender(g):
-    if isinstance(g, str):
-        g = g.strip().lower()
-        if g in ["male", "m", "man"]:
-            return "Male"
-        if g in ["female", "f", "woman"]:
-            return "Female"
-    return None
+if "Age" not in df.columns:
+    df["Age"] = 25
 
-df["Gender"] = df["Gender"].apply(normalize_gender)
-df = df.dropna(subset=["Gender"])
-df["Gender_enc"] = df["Gender"].map({"Male": 0, "Female": 1})
+if "Gender" not in df.columns:
+    df["Gender"] = "Male"
 
-# ======================================================
-# 2️⃣ NUMERIC CLEANING
-# ======================================================
-for col in required_cols:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
+NUM_COLS_RAW = [
+    "Reaction_Time",
+    "Memory_Test_Score",
+    "Stress_Level",
+    "Cognitive_Score",
+    "Age"
+]
+
+for c in NUM_COLS_RAW:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
+
+df["Gender"] = (
+    df["Gender"]
+    .astype(str)
+    .str.lower()
+    .str.strip()
+    .replace({"m": "male", "f": "female"})
+)
+
+df["Gender"] = df["Gender"].fillna("male")
 
 df.fillna(df.median(numeric_only=True), inplace=True)
 
-# ======================================================
-# 3️⃣ FEATURE ENGINEERING (IMPORTANT)
-# ======================================================
-df["RT_per_Age"] = df["Reaction_Time"] / df["Age"]
-df["Memory_per_Age"] = df["Memory_Test_Score"] / df["Age"]
+df["RT_log"] = np.log1p(df["Reaction_Time"])
+df["Memory_log"] = np.log1p(df["Memory_Test_Score"])
+
+df["RT_per_Age"] = df["Reaction_Time"] / (df["Age"] + 1)
+df["Memory_per_Age"] = df["Memory_Test_Score"] / (df["Age"] + 1)
+
 df["RT_x_Memory"] = df["Reaction_Time"] * df["Memory_Test_Score"]
-
-FEATURES = [
-    "Reaction_Time",
-    "Memory_Test_Score",
-    "Age",
-    "Gender_enc",
-    "RT_per_Age",
-    "Memory_per_Age",
-    "RT_x_Memory"
-]
-
-X = df[FEATURES].values.astype(float)
-
-# ======================================================
-# 4️⃣ STRESS REGRESSION TARGET
-# ======================================================
-y_stress_cont = df["Stress_Level"].values.astype(float)
+df["RT_to_Memory"] = df["Reaction_Time"] / (df["Memory_Test_Score"] + 1)
 
 def stress_bucket(x):
     if x <= 3:
-        return "low"
-    if x <= 6:
-        return "medium"
-    return "high"
+        return 0   
+    elif x <= 6:
+        return 1  
+    else:
+        return 2  
 
-df["Stress_Category"] = df["Stress_Level"].apply(stress_bucket)
+df["Stress_Label"] = df["Stress_Level"].apply(stress_bucket)
 
-le = LabelEncoder()
-df["Stress_Encoded"] = le.fit_transform(df["Stress_Category"])
-joblib.dump(le, os.path.join(OUT_DIR, "label_encoder_stress.pkl"))
+FEATURES_NUM = [
+    "Reaction_Time",
+    "Memory_Test_Score",
+    "Age",
+    "RT_log",
+    "Memory_log",
+    "RT_per_Age",
+    "Memory_per_Age",
+    "RT_x_Memory",
+    "RT_to_Memory"
+]
 
-y_stress_cls = df["Stress_Encoded"].values
+FEATURES_CAT = ["Gender"]
 
-# ======================================================
-# 5️⃣ TRAIN STRESS REGRESSION MODEL
-# ======================================================
-Xs_tr, Xs_te, ys_tr, ys_te, ycls_tr, ycls_te = train_test_split(
-    X,
-    y_stress_cont,
-    y_stress_cls,
-    test_size=0.2,
-    random_state=42,
-    stratify=y_stress_cls
+X = df[FEATURES_NUM + FEATURES_CAT]
+y_stress = df["Stress_Label"]
+y_cog = df["Cognitive_Score"] / 100.0 
+
+preprocess = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), FEATURES_NUM),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), FEATURES_CAT),
+    ]
 )
 
+X_train, X_test, y_stress_train, y_stress_test, y_cog_train, y_cog_test = train_test_split(
+    X,
+    y_stress,
+    y_cog,
+    test_size=0.2,
+    random_state=RANDOM_STATE,
+    stratify=y_stress
+)
+
+class_counts = y_stress_train.value_counts()
+class_weights = {
+    cls: class_counts.sum() / count
+    for cls, count in class_counts.items()
+}
+
+sample_weight = y_stress_train.map(class_weights)
+
 stress_model = Pipeline([
-    ("scaler", StandardScaler()),
-    ("reg", XGBRegressor(
-        objective="reg:squarederror",
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.03,
-        subsample=0.85,
-        colsample_bytree=0.85,
-        gamma=0.5,
-        min_child_weight=3,
-        random_state=42
+    ("prep", preprocess),
+    ("model", XGBClassifier(
+        objective="multi:softprob",
+        num_class=3,
+        n_estimators=1200,
+        max_depth=8,
+        learning_rate=0.02,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=5,
+        gamma=0.3,
+        reg_alpha=0.5,
+        reg_lambda=1.5,
+        eval_metric="mlogloss",
+        tree_method="hist",
+        random_state=RANDOM_STATE
     ))
 ])
 
-stress_model.fit(Xs_tr, ys_tr)
+stress_model.fit(
+    X_train,
+    y_stress_train,
+    model__sample_weight=sample_weight
+)
 
-# ======================================================
-# 6️⃣ STRESS METRICS
-# ======================================================
-stress_preds_cont = stress_model.predict(Xs_te)
-stress_rmse = np.sqrt(mean_squared_error(ys_te, stress_preds_cont))
+stress_preds = stress_model.predict(X_test)
 
-stress_preds_cls = [stress_bucket(x) for x in stress_preds_cont]
-stress_preds_enc = le.transform(stress_preds_cls)
-
-print("\n=== STRESS MODEL (REGRESSION → BUCKET) ===")
-print("RMSE:", round(stress_rmse, 3))
-print("Accuracy:", accuracy_score(ycls_te, stress_preds_enc))
-print(classification_report(ycls_te, stress_preds_enc, target_names=le.classes_))
+print("\n================ STRESS MODEL ================")
+print("Accuracy:", accuracy_score(y_stress_test, stress_preds))
+print(classification_report(y_stress_test, stress_preds))
 
 joblib.dump(stress_model, os.path.join(OUT_DIR, "model_stress.pkl"))
 
-# ======================================================
-# 7️⃣ COGNITIVE REGRESSION MODEL
-# ======================================================
-y_cog = df["Cognitive_Score"].values.astype(float)
-
-Xc_tr, Xc_te, yc_tr, yc_te = train_test_split(
-    X, y_cog, test_size=0.2, random_state=42
-)
-
 cog_model = Pipeline([
-    ("scaler", StandardScaler()),
-    ("reg", XGBRegressor(
+    ("prep", preprocess),
+    ("model", XGBRegressor(
         objective="reg:squarederror",
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.85,
-        colsample_bytree=0.85,
-        random_state=42
+        n_estimators=900,
+        max_depth=7,
+        learning_rate=0.03,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=4,
+        gamma=0.2,
+        reg_alpha=0.4,
+        reg_lambda=1.3,
+        tree_method="hist",
+        random_state=RANDOM_STATE
     ))
 ])
 
-cog_model.fit(Xc_tr, yc_tr)
+cog_model.fit(X_train, y_cog_train)
 
-cog_preds = cog_model.predict(Xc_te)
-cog_rmse = np.sqrt(mean_squared_error(yc_te, cog_preds))
+cog_preds = cog_model.predict(X_test)
+cog_preds = np.clip(cog_preds * 100, 0, 100)
 
-print("\n=== COGNITIVE MODEL ===")
-print("RMSE:", round(cog_rmse, 3))
+print("\n============= COGNITIVE MODEL =============")
+print("RMSE:", np.sqrt(mean_squared_error(y_cog_test * 100, cog_preds)))
+print("R2:", r2_score(y_cog_test * 100, cog_preds))
 
 joblib.dump(cog_model, os.path.join(OUT_DIR, "model_cognitive.pkl"))
 
-print("\n✅ Training complete (XGBoost – optimized)")
+print("\n✅ SOTA TRAINING COMPLETE — PLAYWELL READY")
