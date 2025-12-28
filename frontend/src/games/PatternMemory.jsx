@@ -7,19 +7,19 @@ import ResultScreen from "../components/ResultScreen";
 export default function PatternMemory() {
   const [grid, setGrid] = useState([]);
   const [userGrid, setUserGrid] = useState([]);
-  const [status, setStatus] = useState("idle"); // idle | showing | input | loading | result
+  const [status, setStatus] = useState("idle");
   const [rounds, setRounds] = useState(3);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
 
-  const size = 4; // 4x4 grid
+  const size = 4;
 
   const start = () => {
     const newGrid = Array.from({ length: size * size }, () =>
       Math.random() > 0.7 ? 1 : 0
     );
     setGrid(newGrid);
-    setUserGrid(Array(newGrid.length).fill(0)); // ✅ inisialisasi userGrid
+    setUserGrid(Array(newGrid.length).fill(0));
     setSubmitted(false);
     setResult(null);
     setStatus("showing");
@@ -37,13 +37,11 @@ export default function PatternMemory() {
     setSubmitted(true);
     setStatus("loading");
 
-    // Hitung score: jumlah sel yang benar
     const correct = grid.reduce(
       (acc, val, idx) => acc + (val === userGrid[idx] ? 1 : 0),
       0
     );
 
-    // Skala 0-100
     const score = Math.round((correct / grid.length) * 100);
 
     try {
@@ -80,7 +78,6 @@ export default function PatternMemory() {
 
   useEffect(() => {
     if (status === "showing") {
-      // Tampilkan grid sebentar sebelum input
       const timer = setTimeout(() => setStatus("input"), 2000 + rounds * 500);
       return () => clearTimeout(timer);
     }

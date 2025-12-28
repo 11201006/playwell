@@ -1,49 +1,71 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import api from "../utils/api";
 import LoadingScreen from "../components/LoadingScreen";
 import ResultScreen from "../components/ResultScreen";
+
+const MOTOR_LATENCY_BUFFER = 120;
 
 export default function VisualSearch() {
   const [rounds, setRounds] = useState(5);
   const [current, setCurrent] = useState(0);
   const [status, setStatus] = useState("idle");
-  const [startAt, setStartAt] = useState(null);
+
   const [reactionTimes, setReactionTimes] = useState([]);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [targetIdx, setTargetIdx] = useState(null);
+
+  const visualReadyAtRef = useRef(null);
+  const inputLockedRef = useRef(false);
 
   const start = () => {
     setReactionTimes([]);
     setCurrent(0);
     setSubmitted(false);
     setResult(null);
-    nextRound();
     setStatus("playing");
+    nextRound();
   };
 
   const nextRound = () => {
+    inputLockedRef.current = false;
     const target = Math.floor(Math.random() * 9);
     setTargetIdx(target);
-    setStartAt(Date.now());
+
+    requestAnimationFrame(() => {
+      visualReadyAtRef.current = Date.now();
+    });
   };
 
   const handleClick = (idx) => {
     if (status !== "playing") return;
-    const rt = Date.now() - startAt;
-    setReactionTimes((prev) => [...prev, rt]);
-    if (current + 1 >= rounds) submitSession();
-    else {
+    if (inputLockedRef.current) return;
+
+    inputLockedRef.current = true;
+
+    const now = Date.now();
+    const rawRt = now - visualReadyAtRef.current;
+    const adjustedRt = Math.max(rawRt, MOTOR_LATENCY_BUFFER);
+
+    setReactionTimes((prev) => [...prev, adjustedRt]);
+
+    if (current + 1 >= rounds) {
+      submitSession([...reactionTimes, adjustedRt]);
+    } else {
       setCurrent((c) => c + 1);
-      nextRound();
+      setTimeout(nextRound, 250); 
     }
   };
 
-  const submitSession = async () => {
+  const submitSession = async (events) => {
     if (submitted) return;
     setSubmitted(true);
     setStatus("loading");
-    const avg = reactionTimes.length ? Math.round(reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length) : null;
+
+    const avg =
+      events.length > 0
+        ? Math.round(events.reduce((a, b) => a + b, 0) / events.length)
+        : null;
 
     try {
       const res = await api.post("/game/submit", {
@@ -51,8 +73,11 @@ export default function VisualSearch() {
         gameType: "Visual Search",
         reaction_avg: avg,
         memory_score: null,
-        durationMs: rounds * 1500,
-        meta: { reactionTimes },
+        durationMs: events.reduce((a, b) => a + b, 0),
+        meta: {
+          reactionTimes: events,
+          motorLatencyBuffer: MOTOR_LATENCY_BUFFER,
+        },
       });
 
       const recommendations = Array.isArray(res.data.recommendations)
@@ -61,30 +86,48 @@ export default function VisualSearch() {
 
       setResult({
         stress_level: res.data.stress_level,
-        cognitive_score: res.data.cognitive_score ?? res.data.focus_score ?? avg,
+        cognitive_score:
+          res.data.cognitive_score ??
+          res.data.focus_score ??
+          avg,
         recommendations,
       });
 
       setStatus("result");
     } catch (err) {
       console.error(err);
-      setResult({ stress_level: "unknown", cognitive_score: null, recommendations: ["Submit failed"] });
+      setResult({
+        stress_level: "unknown",
+        cognitive_score: null,
+        recommendations: ["Submit failed"],
+      });
       setStatus("result");
     }
   };
 
-  const onRetry = () => start();
-
   return (
     <div className="pt-24 px-6 min-h-screen text-center">
-      <h2 className="text-2xl font-semibold text-teal-700 mb-4">Visual Search</h2>
+      <h2 className="text-2xl font-semibold text-teal-700 mb-4">
+        Visual Search
+      </h2>
 
       {status === "idle" && (
         <div>
           <p className="mb-2">Rounds: {rounds}</p>
-          <input type="range" min={3} max={10} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} />
+          <input
+            type="range"
+            min={3}
+            max={10}
+            value={rounds}
+            onChange={(e) => setRounds(Number(e.target.value))}
+          />
           <div className="mt-4">
-            <button onClick={start} className="bg-teal-500 text-white px-4 py-2 rounded">Start</button>
+            <button
+              onClick={start}
+              className="bg-teal-500 text-white px-4 py-2 rounded"
+            >
+              Start
+            </button>
           </div>
         </div>
       )}
@@ -94,15 +137,29 @@ export default function VisualSearch() {
           {Array.from({ length: 9 }).map((_, idx) => (
             <div
               key={idx}
-              className={`w-16 h-16 rounded border cursor-pointer ${idx === targetIdx ? "bg-red-400" : "bg-gray-200"}`}
+              className={`w-16 h-16 rounded border cursor-pointer transition
+                ${
+                  idx === targetIdx
+                    ? "bg-red-400"
+                    : "bg-gray-200 hover:bg-gray-300"
+                }`}
               onClick={() => handleClick(idx)}
             />
           ))}
         </div>
       )}
 
-      {status === "loading" && <LoadingScreen message="Submitting..." />}
-      {status === "result" && <ResultScreen result={result} onRetry={onRetry} onClose={() => setStatus("idle")} />}
+      {status === "loading" && (
+        <LoadingScreen message="Submitting..." />
+      )}
+
+      {status === "result" && (
+        <ResultScreen
+          result={result}
+          onRetry={start}
+          onClose={() => setStatus("idle")}
+        />
+      )}
     </div>
   );
 }

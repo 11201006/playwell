@@ -7,7 +7,7 @@ import ResultScreen from "../components/ResultScreen";
 export default function MemoryTest() {
   const [sequence, setSequence] = useState([]);
   const [userSequence, setUserSequence] = useState([]);
-  const [status, setStatus] = useState("idle"); // idle | showing | input | loading | result
+  const [status, setStatus] = useState("idle");
   const [rounds, setRounds] = useState(4);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
@@ -15,7 +15,6 @@ export default function MemoryTest() {
 
   const colors = ["red", "green", "blue", "yellow", "purple", "orange"];
 
-  // --- Start Game ---
   const start = () => {
     setSequence([]);
     setUserSequence([]);
@@ -26,7 +25,6 @@ export default function MemoryTest() {
     setStatus("showing");
   };
 
-  // --- Generate Random Sequence ---
   const generateSequence = () => {
     const seq = Array.from({ length: rounds }, () =>
       colors[Math.floor(Math.random() * colors.length)]
@@ -34,7 +32,6 @@ export default function MemoryTest() {
     setSequence(seq);
   };
 
-  // --- Handle User Clicks ---
   const handleClick = (color) => {
     if (status !== "input") return;
     const next = [...userSequence, color];
@@ -44,7 +41,6 @@ export default function MemoryTest() {
     }
   };
 
-  // --- Submit Session to Backend ---
   const submitSession = async (userSeq) => {
     if (submitted) return;
     setSubmitted(true);
@@ -85,7 +81,6 @@ export default function MemoryTest() {
     }
   };
 
-  // --- Flash Sequence to Player ---
   useEffect(() => {
     if (status === "showing" && sequence.length > 0) {
       setCurrentIndex(-1);
@@ -94,7 +89,7 @@ export default function MemoryTest() {
         if (idx >= sequence.length) {
           clearInterval(interval);
           setCurrentIndex(-1);
-          setTimeout(() => setStatus("input"), 500); // small delay before input
+          setTimeout(() => setStatus("input"), 500);
         } else {
           setCurrentIndex(idx);
           idx++;
@@ -104,7 +99,6 @@ export default function MemoryTest() {
     }
   }, [status, sequence]);
 
-  // --- Retry Game ---
   const onRetry = () => start();
 
   return (

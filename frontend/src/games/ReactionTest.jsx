@@ -3,15 +3,32 @@ import api from "../utils/api";
 import LoadingScreen from "../components/LoadingScreen";
 import ResultScreen from "../components/ResultScreen";
 
+const MIN_RT = 150;     
+const MAX_RT = 800;    
+
+const normalizeRT = (rt) =>
+  Math.min(Math.max(Math.round(rt), MIN_RT), MAX_RT);
+
+const computeAvgRT = (times) => {
+  if (!times.length) return null;
+  if (times.length <= 2) {
+    return Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+  }
+  const sorted = [...times].sort((a, b) => a - b);
+  sorted.pop(); 
+  return Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length);
+};
+
 export default function ReactionTest() {
   const [rounds, setRounds] = useState(6);
-  const [status, setStatus] = useState("idle"); // idle | waiting | ready | loading | result
+  const [status, setStatus] = useState("idle"); 
   const [startAt, setStartAt] = useState(null);
   const [reactionTimes, setReactionTimes] = useState([]);
   const [falseStarts, setFalseStarts] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
+
   const timeoutRef = useRef(null);
 
   const start = () => {
@@ -28,13 +45,14 @@ export default function ReactionTest() {
       const delay = Math.random() * 2000 + 800;
       timeoutRef.current = setTimeout(() => {
         setStatus("ready");
-        setStartAt(Date.now());
+        setStartAt(performance.now());
       }, delay);
+
       return () => clearTimeout(timeoutRef.current);
     }
   }, [status]);
 
-  const handleClick = () => {
+  const registerReaction = () => {
     if (status === "waiting") {
       setFalseStarts((f) => f + 1);
       setStatus("idle");
@@ -43,8 +61,9 @@ export default function ReactionTest() {
     }
 
     if (status === "ready") {
-      const rt = Date.now() - startAt;
+      const rt = normalizeRT(performance.now() - startAt);
       setReactionTimes((prev) => [...prev, rt]);
+
       if (currentRound + 1 >= rounds) {
         submitSession([...reactionTimes, rt], falseStarts);
       } else {
@@ -55,35 +74,47 @@ export default function ReactionTest() {
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === "Space") {
+        registerReaction();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [status, startAt, reactionTimes, falseStarts]);
+
   const submitSession = async (events, falseStartsCount) => {
     if (submitted) return;
-    setSubmitted(true); // ✅ immediately block double submit
+    setSubmitted(true);
     setStatus("loading");
 
-    const avg =
-      events.length > 0
-        ? Math.round(events.reduce((a, b) => a + b, 0) / events.length)
-        : null;
+    const avgRT = computeAvgRT(events);
 
     try {
       const res = await api.post("/game/submit", {
         userId: localStorage.getItem("user_id"),
         gameType: "Reaction Test",
-        reaction_avg: avg,
+        reaction_avg: avgRT,
         memory_score: null,
         durationMs: events.reduce((a, b) => a + b, 0),
-        meta: { events, falseStarts: falseStartsCount },
+        meta: {
+          raw_events: events,
+          normalized_events: events.map(normalizeRT),
+          falseStarts: falseStartsCount,
+          input: "mouse+keyboard",
+        },
       });
-
-      const recommendations = Array.isArray(res.data.recommendations)
-        ? res.data.recommendations
-        : [res.data.recommendations || ""];
 
       setResult({
         stress_level: res.data.stress_level,
         cognitive_score:
-          res.data.cognitive_score ?? res.data.focus_score ?? avg,
-        recommendations,
+          res.data.cognitive_score ??
+          res.data.focus_score ??
+          avgRT,
+        recommendations: Array.isArray(res.data.recommendations)
+          ? res.data.recommendations
+          : [res.data.recommendations || ""],
       });
 
       setStatus("result");
@@ -98,11 +129,11 @@ export default function ReactionTest() {
     }
   };
 
-  const onRetry = () => start();
-
   return (
     <div className="pt-24 px-6 min-h-screen text-center">
-      <h2 className="text-2xl font-semibold text-teal-700 mb-4">Reaction Test</h2>
+      <h2 className="text-2xl font-semibold text-teal-700 mb-4">
+        Reaction Test
+      </h2>
 
       {status === "idle" && (
         <div>
@@ -128,18 +159,18 @@ export default function ReactionTest() {
       {status === "waiting" && (
         <div
           className="w-72 h-72 mx-auto rounded-2xl flex items-center justify-center bg-red-200 cursor-pointer"
-          onClick={handleClick}
+          onClick={registerReaction}
         >
-          Wait...
+          Wait…
         </div>
       )}
 
       {status === "ready" && (
         <div
           className="w-72 h-72 mx-auto rounded-2xl flex items-center justify-center bg-green-300 cursor-pointer"
-          onClick={handleClick}
+          onClick={registerReaction}
         >
-          Click!
+          Click! (or press Space)
         </div>
       )}
 
@@ -150,14 +181,14 @@ export default function ReactionTest() {
       {status === "result" && (
         <ResultScreen
           result={result}
-          onRetry={onRetry}
+          onRetry={start}
           onClose={() => setStatus("idle")}
         />
       )}
 
       <div className="mt-6 text-sm text-gray-600">
-        Round: {currentRound + 1}/{rounds} | Trials: {reactionTimes.length} | False
-        starts: {falseStarts}
+        Round: {currentRound + 1}/{rounds} | Trials:{" "}
+        {reactionTimes.length} | False starts: {falseStarts}
       </div>
     </div>
   );

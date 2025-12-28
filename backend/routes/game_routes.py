@@ -17,14 +17,17 @@ MODEL_COG_PATH = os.path.join(ML_DIR, "model_cognitive.pkl")
 _model_stress = joblib.load(MODEL_STRESS_PATH) if os.path.exists(MODEL_STRESS_PATH) else None
 _model_cog = joblib.load(MODEL_COG_PATH) if os.path.exists(MODEL_COG_PATH) else None
 
-DEFAULT_REACTION = 300.0
-DEFAULT_MEMORY = 50.0
+DEFAULT_REACTION = 400.0
+DEFAULT_MEMORY = 70.0
 DEFAULT_AGE = 25
 DEFAULT_GENDER = "Male"
 
 REACTION_GAMES = {"Reaction Test", "Visual Search"}
 MEMORY_GAMES = {"Memory Test", "Pattern Memory"}
-DUAL_GAMES = {"Dual Task"}
+DUAL_GAMES = {
+    "Dual Task",
+    "Stroop Test"
+}
 
 STRESS_MAP = {
     0: "low",
