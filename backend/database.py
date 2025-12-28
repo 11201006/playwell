@@ -8,7 +8,6 @@ def init_db(app: Flask):
     database_url = os.getenv("DATABASE_URL")
 
     if database_url:
-        # Fix untuk PostgreSQL Railway
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
     else:

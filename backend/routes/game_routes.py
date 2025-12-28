@@ -4,6 +4,7 @@ from backend.models.game_model import GameSession, AnalysisResult
 from backend.utils.auth_middleware import token_required
 
 import joblib, json, os, statistics
+import pandas as pd
 
 game_bp = Blueprint("game_bp", __name__)
 
@@ -17,7 +18,7 @@ _model_cog = joblib.load(MODEL_COG_PATH) if os.path.exists(MODEL_COG_PATH) else 
 DEFAULT_REACTION = 300.0
 DEFAULT_MEMORY = 50.0
 DEFAULT_AGE = 25
-DEFAULT_GENDER = "male"
+DEFAULT_GENDER = "Male"
 
 REACTION_GAMES = {"Reaction Test", "Visual Search"}
 MEMORY_GAMES = {"Memory Test", "Pattern Memory"}
@@ -27,17 +28,26 @@ def avg_or_default(values, default):
     values = [v for v in values if v is not None]
     return float(statistics.mean(values)) if values else default
 
+
+def normalize_gender(g):
+    g = str(g).strip().lower()
+    if g in ("female", "f"):
+        return "Female"
+    return "Male"
+
+
 def build_model_input(reaction, memory, age, gender):
-    return [{
-        "Reaction_Time": reaction,
-        "Memory_Test_Score": memory,
-        "Age": age,
-        "Gender": gender
-    }]
-
-
-def stress_label_to_text(label):
-    return {0: "low", 1: "medium", 2: "high"}.get(int(label), "medium")
+    """
+    IMPORTANT:
+    - Must return pandas DataFrame
+    - Column names MUST match training
+    """
+    return pd.DataFrame([{
+        "Reaction_Time": float(reaction),
+        "Memory_Test_Score": float(memory),
+        "Age": float(age),
+        "Gender": normalize_gender(gender),
+    }])
 
 @game_bp.route("/game/predict", methods=["POST"])
 def predict_game():
@@ -47,31 +57,39 @@ def predict_game():
         reaction = float(data.get("reaction_avg") or DEFAULT_REACTION)
         memory = float(data.get("memory_score") or DEFAULT_MEMORY)
         age = float(data.get("age") or DEFAULT_AGE)
-        gender = str(data.get("gender") or DEFAULT_GENDER).lower()
+        gender = data.get("gender") or DEFAULT_GENDER
 
         X = build_model_input(reaction, memory, age, gender)
 
-        if _model_stress:
-            stress_label = int(_model_stress.predict(X)[0])
-            stress_pred = stress_label_to_text(stress_label)
-        else:
+        # ---------- STRESS ----------
+        try:
+            stress_pred = (
+                _model_stress.predict(X)[0]
+                if _model_stress
+                else "medium"
+            )
+        except Exception as e:
+            print("STRESS MODEL ERROR:", e)
             stress_pred = "medium"
 
-        if _model_cog:
-            cog_raw = float(_model_cog.predict(X)[0])
-            cog_pred = round(max(0, min(100, cog_raw * 100)))
-        else:
-            cog_pred = 50
+        # ---------- COGNITIVE ----------
+        try:
+            cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 50
+        except Exception as e:
+            print("COG MODEL ERROR:", e)
+            cog_raw = 50
+
+        cog_pred = int(max(0, min(100, round(cog_raw))))
 
         if stress_pred == "high" or cog_pred < 40:
             rec = [
                 "Take a 5–10 minute break and do breathing exercises.",
-                "Reduce distractions and retry shorter sessions."
+                "Reduce distractions and retry shorter sessions.",
             ]
         elif stress_pred == "medium" or cog_pred < 70:
             rec = [
                 "Try a short focus exercise (5 minutes).",
-                "Repeat the game to build familiarity."
+                "Repeat the game to build familiarity.",
             ]
         else:
             rec = ["Great job — keep practicing to improve further!"]
@@ -126,33 +144,45 @@ def submit_game(current_user):
         past = GameSession.query.filter_by(user_id=current_user.id).all()
 
         reaction_final = reaction if reaction is not None else avg_or_default(
-            [s.reaction_time_avg for s in past], DEFAULT_REACTION
+            [s.reaction_time_avg for s in past],
+            DEFAULT_REACTION
         )
 
         memory_final = memory if memory is not None else avg_or_default(
-            [s.memory_score for s in past], DEFAULT_MEMORY
+            [s.memory_score for s in past],
+            DEFAULT_MEMORY
         )
 
         age = current_user.age or DEFAULT_AGE
-        gender = (current_user.gender or DEFAULT_GENDER).lower()
+        gender = current_user.gender or DEFAULT_GENDER
 
         X = build_model_input(reaction_final, memory_final, age, gender)
 
-        stress_label = int(_model_stress.predict(X)[0]) if _model_stress else 1
-        stress_pred = stress_label_to_text(stress_label)
+        # ---------- STRESS ----------
+        try:
+            stress_pred = _model_stress.predict(X)[0] if _model_stress else "medium"
+        except Exception as e:
+            print("STRESS MODEL ERROR:", e)
+            stress_pred = "medium"
 
-        cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
-        cog_pred = round(max(0, min(100, cog_raw * 100)))
+        # ---------- COGNITIVE ----------
+        try:
+            cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 50
+        except Exception as e:
+            print("COG MODEL ERROR:", e)
+            cog_raw = 50
+
+        cog_pred = int(max(0, min(100, round(cog_raw))))
 
         if stress_pred == "high" or cog_pred < 40:
             rec = [
                 "Take a 5–10 minute break and do breathing exercises.",
-                "Reduce distractions and retry shorter sessions."
+                "Reduce distractions and retry shorter sessions.",
             ]
         elif stress_pred == "medium" or cog_pred < 70:
             rec = [
                 "Try a short focus exercise (5 minutes).",
-                "Repeat the game to build familiarity."
+                "Repeat the game to build familiarity.",
             ]
         else:
             rec = ["Great job — keep practicing to improve further!"]
