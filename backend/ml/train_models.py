@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
-
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -33,6 +33,24 @@ REQUIRED = [
 for c in REQUIRED:
     if c not in df.columns:
         raise Exception(f"❌ Missing column: {c}")
+
+class FeatureEngineer(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        X["RT_log"] = np.log1p(X["Reaction_Time"])
+        X["Memory_log"] = np.log1p(X["Memory_Test_Score"])
+
+        X["RT_per_Age"] = X["Reaction_Time"] / (X["Age"] + 1)
+        X["Memory_per_Age"] = X["Memory_Test_Score"] / (X["Age"] + 1)
+
+        X["RT_x_Memory"] = X["Reaction_Time"] * X["Memory_Test_Score"]
+        X["RT_to_Memory"] = X["Reaction_Time"] / (X["Memory_Test_Score"] + 1)
+
+        return X
 
 if "Age" not in df.columns:
     df["Age"] = 25
@@ -85,13 +103,7 @@ df["Stress_Label"] = df["Stress_Level"].apply(stress_bucket)
 FEATURES_NUM = [
     "Reaction_Time",
     "Memory_Test_Score",
-    "Age",
-    "RT_log",
-    "Memory_log",
-    "RT_per_Age",
-    "Memory_per_Age",
-    "RT_x_Memory",
-    "RT_to_Memory"
+    "Age"
 ]
 
 FEATURES_CAT = ["Gender"]
@@ -100,12 +112,23 @@ X = df[FEATURES_NUM + FEATURES_CAT]
 y_stress = df["Stress_Label"]
 y_cog = df["Cognitive_Score"] / 100.0 
 
-preprocess = ColumnTransformer(
-    transformers=[
-        ("num", StandardScaler(), FEATURES_NUM),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), FEATURES_CAT),
-    ]
-)
+preprocess = Pipeline([
+    ("features", FeatureEngineer()),
+    ("columns", ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), FEATURES_NUM + [
+                "RT_log",
+                "Memory_log",
+                "RT_per_Age",
+                "Memory_per_Age",
+                "RT_x_Memory",
+                "RT_to_Memory"
+            ]),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), FEATURES_CAT),
+        ]
+    ))
+])
+
 
 X_train, X_test, y_stress_train, y_stress_test, y_cog_train, y_cog_test = train_test_split(
     X,
