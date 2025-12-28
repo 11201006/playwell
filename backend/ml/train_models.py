@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
-from feature_engineering import FeatureEngineer
+from backend.ml.feature_engineering import FeatureEngineer
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
