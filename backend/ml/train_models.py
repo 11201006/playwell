@@ -2,7 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.base import BaseEstimator, TransformerMixin
+from feature_engineering import FeatureEngineer
+
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -34,24 +35,6 @@ for c in REQUIRED:
     if c not in df.columns:
         raise Exception(f"❌ Missing column: {c}")
 
-class FeatureEngineer(BaseEstimator, TransformerMixin):
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        X = X.copy()
-
-        X["RT_log"] = np.log1p(X["Reaction_Time"])
-        X["Memory_log"] = np.log1p(X["Memory_Test_Score"])
-
-        X["RT_per_Age"] = X["Reaction_Time"] / (X["Age"] + 1)
-        X["Memory_per_Age"] = X["Memory_Test_Score"] / (X["Age"] + 1)
-
-        X["RT_x_Memory"] = X["Reaction_Time"] * X["Memory_Test_Score"]
-        X["RT_to_Memory"] = X["Reaction_Time"] / (X["Memory_Test_Score"] + 1)
-
-        return X
-
 if "Age" not in df.columns:
     df["Age"] = 25
 
@@ -80,15 +63,6 @@ df["Gender"] = (
 df["Gender"] = df["Gender"].fillna("male")
 
 df.fillna(df.median(numeric_only=True), inplace=True)
-
-df["RT_log"] = np.log1p(df["Reaction_Time"])
-df["Memory_log"] = np.log1p(df["Memory_Test_Score"])
-
-df["RT_per_Age"] = df["Reaction_Time"] / (df["Age"] + 1)
-df["Memory_per_Age"] = df["Memory_Test_Score"] / (df["Age"] + 1)
-
-df["RT_x_Memory"] = df["Reaction_Time"] * df["Memory_Test_Score"]
-df["RT_to_Memory"] = df["Reaction_Time"] / (df["Memory_Test_Score"] + 1)
 
 def stress_bucket(x):
     if x <= 3:

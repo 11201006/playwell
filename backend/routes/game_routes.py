@@ -3,6 +3,8 @@ from backend.database import db
 from backend.models.game_model import GameSession, AnalysisResult
 from backend.utils.auth_middleware import token_required
 
+from backend.ml.feature_engineering import FeatureEngineer  
+
 import joblib, json, os, statistics
 import pandas as pd
 
@@ -24,6 +26,12 @@ REACTION_GAMES = {"Reaction Test", "Visual Search"}
 MEMORY_GAMES = {"Memory Test", "Pattern Memory"}
 DUAL_GAMES = {"Dual Task"}
 
+STRESS_MAP = {
+    0: "low",
+    1: "medium",
+    2: "high"
+}
+
 def avg_or_default(values, default):
     values = [v for v in values if v is not None]
     return float(statistics.mean(values)) if values else default
@@ -31,17 +39,10 @@ def avg_or_default(values, default):
 
 def normalize_gender(g):
     g = str(g).strip().lower()
-    if g in ("female", "f"):
-        return "Female"
-    return "Male"
+    return "Female" if g in ("female", "f") else "Male"
 
 
 def build_model_input(reaction, memory, age, gender):
-    """
-    IMPORTANT:
-    - Must return pandas DataFrame
-    - Column names MUST match training
-    """
     return pd.DataFrame([{
         "Reaction_Time": float(reaction),
         "Memory_Test_Score": float(memory),
@@ -63,24 +64,22 @@ def predict_game():
 
         # ---------- STRESS ----------
         try:
-            stress_pred = (
-                _model_stress.predict(X)[0]
-                if _model_stress
-                else "medium"
-            )
+            stress_idx = int(_model_stress.predict(X)[0]) if _model_stress else 1
+            stress_pred = STRESS_MAP.get(stress_idx, "medium")
         except Exception as e:
             print("STRESS MODEL ERROR:", e)
             stress_pred = "medium"
 
         # ---------- COGNITIVE ----------
         try:
-            cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 50
+            cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
         except Exception as e:
             print("COG MODEL ERROR:", e)
-            cog_raw = 50
+            cog_raw = 0.5
 
-        cog_pred = int(max(0, min(100, round(cog_raw))))
+        cog_pred = int(max(0, min(100, round(cog_raw * 100))))
 
+        # ---------- RECOMMENDATION ----------
         if stress_pred == "high" or cog_pred < 40:
             rec = [
                 "Take a 5–10 minute break and do breathing exercises.",
@@ -105,6 +104,7 @@ def predict_game():
         print("predict_game error:", e)
         return jsonify({"error": "Internal server error"}), 500
 
+
 @game_bp.route("/game/submit", methods=["POST"])
 @token_required
 def submit_game(current_user):
@@ -118,16 +118,13 @@ def submit_game(current_user):
         raw_reaction = data.get("reaction_avg")
         raw_memory = data.get("memory_score")
 
-        reaction = None
-        memory = None
+        reaction = float(raw_reaction) if raw_reaction is not None and (
+            game_type in REACTION_GAMES or game_type in DUAL_GAMES
+        ) else None
 
-        if game_type in REACTION_GAMES or game_type in DUAL_GAMES:
-            if raw_reaction is not None:
-                reaction = float(raw_reaction)
-
-        if game_type in MEMORY_GAMES or game_type in DUAL_GAMES:
-            if raw_memory is not None:
-                memory = float(raw_memory)
+        memory = float(raw_memory) if raw_memory is not None and (
+            game_type in MEMORY_GAMES or game_type in DUAL_GAMES
+        ) else None
 
         session = GameSession(
             user_id=current_user.id,
@@ -159,20 +156,12 @@ def submit_game(current_user):
         X = build_model_input(reaction_final, memory_final, age, gender)
 
         # ---------- STRESS ----------
-        try:
-            stress_pred = _model_stress.predict(X)[0] if _model_stress else "medium"
-        except Exception as e:
-            print("STRESS MODEL ERROR:", e)
-            stress_pred = "medium"
+        stress_idx = int(_model_stress.predict(X)[0]) if _model_stress else 1
+        stress_pred = STRESS_MAP.get(stress_idx, "medium")
 
         # ---------- COGNITIVE ----------
-        try:
-            cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 50
-        except Exception as e:
-            print("COG MODEL ERROR:", e)
-            cog_raw = 50
-
-        cog_pred = int(max(0, min(100, round(cog_raw))))
+        cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
+        cog_pred = int(max(0, min(100, round(cog_raw * 100))))
 
         if stress_pred == "high" or cog_pred < 40:
             rec = [
