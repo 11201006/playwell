@@ -1,62 +1,68 @@
 // src/utils/recommendations.js
 
-export const recommendationRules = [
-  {
-    stress_level: "high",
-    cognitive_score: { min: 0, max: 100 },
-    recommendations: [
-      "Take a short break and do breathing exercises.",
-      "Reduce distractions and retry shorter sessions."
-    ]
-  },
-  {
-    stress_level: "medium",
-    cognitive_score: { min: 0, max: 100 },
-    recommendations: [
-      "Try a short focus exercise (5 minutes).",
-      "Repeat the game to build familiarity."
-    ]
-  },
-  {
-    stress_level: "low",
-    cognitive_score: { min: 0, max: 100 },
-    recommendations: [
-      "Keep up the good work!",
-      "Continue practicing to improve further."
-    ]
-  },
-  {
-    stress_level: "any",
-    cognitive_score: { min: 0, max: 39 },
-    recommendations: ["Consider reviewing basic exercises to improve focus."]
-  },
-  {
-    stress_level: "any",
-    cognitive_score: { min: 40, max: 69 },
-    recommendations: ["Keep practicing to strengthen your cognitive skills."]
-  },
-  {
-    stress_level: "any",
-    cognitive_score: { min: 70, max: 100 },
-    recommendations: ["Excellent cognitive performance — keep it up!"]
-  }
+const HIGH_STRESS = [
+  "You seem mentally fatigued — taking a short break may help restore focus.",
+  "A brief pause and some deep breathing could improve your next performance.",
+  "Reducing distractions and returning later may feel more comfortable.",
+  "It’s okay to slow down — giving yourself time can improve results.",
+  "Stepping away briefly might help you feel more relaxed and focused."
 ];
 
+const MEDIUM_STRESS = [
+  "You’re doing fairly well — a short rest could sharpen your focus.",
+  "Trying one more round calmly may improve consistency.",
+  "Your performance is stable — staying relaxed can help further.",
+  "A brief focus exercise may help before continuing.",
+  "You’re on track — maintaining a steady pace can boost results."
+];
+
+const LOW_STRESS = [
+  "Great work — your focus and control look well balanced.",
+  "You’re performing consistently — keep up the good rhythm.",
+  "Excellent performance — your current state supports strong focus.",
+  "You appear relaxed and attentive — well done!",
+  "Keep practicing to maintain this positive performance level."
+];
+
+const LOW_COGNITIVE = [
+  "This task may feel challenging right now — gradual practice can help.",
+  "Taking things step by step may improve comfort and accuracy.",
+  "It’s normal to struggle sometimes — steady practice can make a difference."
+];
+
+const MID_COGNITIVE = [
+  "Your cognitive performance is developing well — consistency will help.",
+  "You’re building focus — continued practice can strengthen it further.",
+  "You’re progressing — keeping a calm pace may improve accuracy."
+];
+
+const HIGH_COGNITIVE = [
+  "Your cognitive performance is strong — great job!",
+  "You’re demonstrating good mental control and focus.",
+  "Excellent cognitive performance — keep up the good work."
+];
+
+const randomPickMultiple = (list, n = 2) => {
+  const shuffled = [...list].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, n);
+};
+
 export function getRecommendations({ stress_level, cognitive_score }) {
-  const recs = [];
-  if (stress_level === undefined || cognitive_score === undefined) return recs;
+  if (stress_level == null || cognitive_score == null) return null;
 
-  recommendationRules.forEach((rule) => {
-    const stressMatch =
-      rule.stress_level === "any" || rule.stress_level === stress_level;
-    const scoreMatch =
-      cognitive_score >= rule.cognitive_score.min &&
-      cognitive_score <= rule.cognitive_score.max;
+  let sourceList = [];
 
-    if (stressMatch && scoreMatch) {
-      recs.push(...rule.recommendations);
-    }
-  });
+  if (stress_level === "high" || cognitive_score < 40) {
+    sourceList = HIGH_STRESS;
+  } else if (stress_level === "medium" || cognitive_score < 70) {
+    sourceList = MEDIUM_STRESS;
+  } else if (cognitive_score < 40) {
+    sourceList = LOW_COGNITIVE;
+  } else if (cognitive_score < 70) {
+    sourceList = MID_COGNITIVE;
+  } else {
+    sourceList = LOW_STRESS.concat(HIGH_COGNITIVE);
+  }
 
-  return recs;
+  return randomPickMultiple(sourceList, 2);
 }
