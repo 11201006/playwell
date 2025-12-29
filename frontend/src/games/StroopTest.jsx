@@ -77,10 +77,14 @@ export default function StroopTest() {
     setSubmitted(true);
     setStatus("loading");
 
-    const avgReaction =
-      events.length > 0
-        ? Math.round(events.reduce((a, b) => a + b, 0) / events.length)
-        : null;
+    const rawAvgReaction =
+    events.length > 0
+    ? events.reduce((a, b) => a + b, 0) / events.length
+    : null;
+    
+    const avgReaction = rawAvgReaction
+    ? Math.round(rawAvgReaction / 6)
+    : null;
 
     const memoryScore = Math.round((correctCount / rounds) * 100);
 

@@ -80,12 +80,14 @@ export default function DualTask() {
     setSubmitted(true);
     setStatus("loading");
 
-    const avgReaction =
-      reactionTimes.length > 0
-        ? Math.round(
-            reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length
-          )
-        : null;
+    const rawAvgReaction =
+  reactionTimes.length > 0
+    ? reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length
+    : null;
+
+const avgReaction = rawAvgReaction
+  ? Math.round(rawAvgReaction / 5)
+  : null;
 
     const correct = userMemoryInput.filter(
       (val, idx) => val === memorySequence[idx]

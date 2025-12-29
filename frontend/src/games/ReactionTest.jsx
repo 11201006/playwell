@@ -89,7 +89,9 @@ export default function ReactionTest() {
     setSubmitted(true);
     setStatus("loading");
 
-    const avgRT = computeAvgRT(events);
+    const rawAvgRT = computeAvgRT(events);
+    
+    const avgRT = rawAvgRT ? Math.round(rawAvgRT / 2) : null;
 
     try {
       const res = await api.post("/game/submit", {

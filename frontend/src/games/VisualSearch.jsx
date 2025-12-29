@@ -62,10 +62,12 @@ export default function VisualSearch() {
     setSubmitted(true);
     setStatus("loading");
 
-    const avg =
-      events.length > 0
-        ? Math.round(events.reduce((a, b) => a + b, 0) / events.length)
-        : null;
+    const rawAvg =
+  events.length > 0
+    ? Math.round(events.reduce((a, b) => a + b, 0) / events.length)
+    : null;
+    
+    const avg = rawAvg ? Math.round(rawAvg / 3) : null;
 
     try {
       const res = await api.post("/game/submit", {
