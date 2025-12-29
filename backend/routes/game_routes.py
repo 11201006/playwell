@@ -3,8 +3,6 @@ from backend.database import db
 from backend.models.game_model import GameSession, AnalysisResult
 from backend.utils.auth_middleware import token_required
 
-from backend.ml.feature_engineering import FeatureEngineer  
-
 import joblib, json, os, statistics
 import pandas as pd
 
@@ -17,13 +15,21 @@ MODEL_COG_PATH = os.path.join(ML_DIR, "model_cognitive.pkl")
 _model_stress = joblib.load(MODEL_STRESS_PATH) if os.path.exists(MODEL_STRESS_PATH) else None
 _model_cog = joblib.load(MODEL_COG_PATH) if os.path.exists(MODEL_COG_PATH) else None
 
-DEFAULT_REACTION = 400.0
+DEFAULT_REACTION = 300.0
 DEFAULT_MEMORY = 70.0
 DEFAULT_AGE = 25
 DEFAULT_GENDER = "Male"
 
-REACTION_GAMES = {"Reaction Test", "Visual Search"}
-MEMORY_GAMES = {"Memory Test", "Pattern Memory"}
+REACTION_GAMES = {
+    "Reaction Test",
+    "Visual Search"
+}
+
+MEMORY_GAMES = {
+    "Memory Test",
+    "Pattern Memory"
+}
+
 DUAL_GAMES = {
     "Dual Task",
     "Stroop Test"
@@ -35,14 +41,14 @@ STRESS_MAP = {
     2: "high"
 }
 
-def avg_or_default(values, default):
-    values = [v for v in values if v is not None]
-    return float(statistics.mean(values)) if values else default
+def normalize_gender(gender):
+    g = str(gender).strip().lower()
+    return "Female" if g in ("female", "f", "woman") else "Male"
 
 
-def normalize_gender(g):
-    g = str(g).strip().lower()
-    return "Female" if g in ("female", "f") else "Male"
+def median_or_default(values, default):
+    clean = [v for v in values if v is not None]
+    return float(statistics.median(clean)) if clean else default
 
 
 def build_model_input(reaction, memory, age, gender):
@@ -53,60 +59,56 @@ def build_model_input(reaction, memory, age, gender):
         "Gender": normalize_gender(gender),
     }])
 
+
+def generate_recommendations(stress, cognitive):
+    if stress == "high" or cognitive < 40:
+        return [
+            "Take a 5–10 minute break and do breathing exercises.",
+            "Reduce distractions and retry shorter sessions."
+        ]
+    elif stress == "medium" or cognitive < 70:
+        return [
+            "Try a short focus exercise (5 minutes).",
+            "Repeat the game to build familiarity."
+        ]
+    return ["Great job — keep practicing to improve further!"]
+
 @game_bp.route("/game/predict", methods=["POST"])
 def predict_game():
     try:
         data = request.json or {}
 
-        reaction = float(data.get("reaction_avg") or DEFAULT_REACTION)
-        memory = float(data.get("memory_score") or DEFAULT_MEMORY)
-        age = float(data.get("age") or DEFAULT_AGE)
+        reaction = data.get("reaction_avg")
+        memory = data.get("memory_score")
+        age = data.get("age") or DEFAULT_AGE
         gender = data.get("gender") or DEFAULT_GENDER
 
-        X = build_model_input(reaction, memory, age, gender)
+        reaction_final = float(reaction) if reaction is not None else DEFAULT_REACTION
+        memory_final = float(memory) if memory is not None else DEFAULT_MEMORY
 
-        # ---------- STRESS ----------
-        try:
-            stress_idx = int(_model_stress.predict(X)[0]) if _model_stress else 1
-            stress_pred = STRESS_MAP.get(stress_idx, "medium")
-        except Exception as e:
-            print("STRESS MODEL ERROR:", e)
-            stress_pred = "medium"
+        X = build_model_input(
+            reaction_final,
+            memory_final,
+            age,
+            gender
+        )
 
-        # ---------- COGNITIVE ----------
-        try:
-            cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
-        except Exception as e:
-            print("COG MODEL ERROR:", e)
-            cog_raw = 0.5
+        stress_idx = int(_model_stress.predict(X)[0]) if _model_stress else 1
+        stress_pred = STRESS_MAP.get(stress_idx, "medium")
 
-        cog_pred = int(max(0, min(100, round(cog_raw * 100))))
-
-        # ---------- RECOMMENDATION ----------
-        if stress_pred == "high" or cog_pred < 40:
-            rec = [
-                "Take a 5–10 minute break and do breathing exercises.",
-                "Reduce distractions and retry shorter sessions.",
-            ]
-        elif stress_pred == "medium" or cog_pred < 70:
-            rec = [
-                "Try a short focus exercise (5 minutes).",
-                "Repeat the game to build familiarity.",
-            ]
-        else:
-            rec = ["Great job — keep practicing to improve further!"]
+        cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
+        cognitive = int(max(0, min(100, round(cog_raw * 100))))
 
         return jsonify({
             "stress_level": stress_pred,
-            "cognitive_score": cog_pred,
-            "focus_score": cog_pred,
-            "recommendations": rec
+            "cognitive_score": cognitive,
+            "focus_score": cognitive,
+            "recommendations": generate_recommendations(stress_pred, cognitive)
         })
 
     except Exception as e:
         print("predict_game error:", e)
         return jsonify({"error": "Internal server error"}), 500
-
 
 @game_bp.route("/game/submit", methods=["POST"])
 @token_required
@@ -141,49 +143,49 @@ def submit_game(current_user):
         db.session.add(session)
         db.session.commit()
 
-        past = GameSession.query.filter_by(user_id=current_user.id).all()
+        history = GameSession.query.filter_by(
+            user_id=current_user.id
+        ).all()
 
-        reaction_final = reaction if reaction is not None else avg_or_default(
-            [s.reaction_time_avg for s in past],
-            DEFAULT_REACTION
+        reaction_final = (
+            reaction if reaction is not None else
+            median_or_default(
+                [s.reaction_time_avg for s in history],
+                DEFAULT_REACTION
+            )
         )
 
-        memory_final = memory if memory is not None else avg_or_default(
-            [s.memory_score for s in past],
-            DEFAULT_MEMORY
+        memory_final = (
+            memory if memory is not None else
+            median_or_default(
+                [s.memory_score for s in history],
+                DEFAULT_MEMORY
+            )
         )
 
         age = current_user.age or DEFAULT_AGE
         gender = current_user.gender or DEFAULT_GENDER
 
-        X = build_model_input(reaction_final, memory_final, age, gender)
+        X = build_model_input(
+            reaction_final,
+            memory_final,
+            age,
+            gender
+        )
 
-        # ---------- STRESS ----------
         stress_idx = int(_model_stress.predict(X)[0]) if _model_stress else 1
         stress_pred = STRESS_MAP.get(stress_idx, "medium")
 
-        # ---------- COGNITIVE ----------
         cog_raw = float(_model_cog.predict(X)[0]) if _model_cog else 0.5
-        cog_pred = int(max(0, min(100, round(cog_raw * 100))))
-
-        if stress_pred == "high" or cog_pred < 40:
-            rec = [
-                "Take a 5–10 minute break and do breathing exercises.",
-                "Reduce distractions and retry shorter sessions.",
-            ]
-        elif stress_pred == "medium" or cog_pred < 70:
-            rec = [
-                "Try a short focus exercise (5 minutes).",
-                "Repeat the game to build familiarity.",
-            ]
-        else:
-            rec = ["Great job — keep practicing to improve further!"]
+        cognitive = int(max(0, min(100, round(cog_raw * 100))))
 
         analysis = AnalysisResult(
             session_id=session.id,
             stress_level=stress_pred,
-            cognitive_score=cog_pred,
-            recommendations=json.dumps(rec)
+            cognitive_score=cognitive,
+            recommendations=json.dumps(
+                generate_recommendations(stress_pred, cognitive)
+            )
         )
 
         db.session.add(analysis)
@@ -192,9 +194,11 @@ def submit_game(current_user):
         return jsonify({
             "session_id": session.id,
             "stress_level": stress_pred,
-            "cognitive_score": cog_pred,
-            "focus_score": cog_pred,
-            "recommendations": rec
+            "cognitive_score": cognitive,
+            "focus_score": cognitive,
+            "reaction_used": reaction_final,
+            "memory_used": memory_final,
+            "recommendations": generate_recommendations(stress_pred, cognitive)
         })
 
     except Exception as e:
