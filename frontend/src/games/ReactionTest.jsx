@@ -28,6 +28,7 @@ export default function ReactionTest() {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
+  const isGuest = !localStorage.getItem("access_token");
 
   const timeoutRef = useRef(null);
 
@@ -85,17 +86,23 @@ export default function ReactionTest() {
   }, [status, startAt, reactionTimes, falseStarts]);
 
   const submitSession = async (events, falseStartsCount) => {
-    if (submitted) return;
-    setSubmitted(true);
-    setStatus("loading");
+  if (submitted) return;
+  setSubmitted(true);
+  setStatus("loading");
 
-    const rawAvgRT = computeAvgRT(events);
-    
-    const avgRT = rawAvgRT ? Math.round(rawAvgRT / 2) : null;
+  const rawAvgRT = computeAvgRT(events);
+  const avgRT = rawAvgRT ? Math.round(rawAvgRT / 2) : null;
 
-    try {
-      const res = await api.post("/game/submit", {
-        userId: localStorage.getItem("user_id"),
+  try {
+    let res;
+
+    if (isGuest) {
+      res = await api.post("/game/predict", {
+        reaction_avg: avgRT,
+        memory_score: null,
+      });
+    } else {
+      res = await api.post("/game/submit", {
         gameType: "Reaction Test",
         reaction_avg: avgRT,
         memory_score: null,
@@ -107,29 +114,30 @@ export default function ReactionTest() {
           input: "mouse+keyboard",
         },
       });
-
-      setResult({
-        stress_level: res.data.stress_level,
-        cognitive_score:
-          res.data.cognitive_score ??
-          res.data.focus_score ??
-          avgRT,
-        recommendations: Array.isArray(res.data.recommendations)
-          ? res.data.recommendations
-          : [res.data.recommendations || ""],
-      });
-
-      setStatus("result");
-    } catch (err) {
-      console.error(err);
-      setResult({
-        stress_level: "unknown",
-        cognitive_score: null,
-        recommendations: ["Submit failed"],
-      });
-      setStatus("result");
     }
-  };
+
+    setResult({
+      stress_level: res.data.stress_level,
+      cognitive_score:
+        res.data.cognitive_score ??
+        res.data.focus_score ??
+        avgRT,
+      recommendations: Array.isArray(res.data.recommendations)
+        ? res.data.recommendations
+        : [res.data.recommendations || ""],
+    });
+
+    setStatus("result");
+  } catch (err) {
+    console.error(err);
+    setResult({
+      stress_level: "unknown",
+      cognitive_score: null,
+      recommendations: ["Submit failed"],
+    });
+    setStatus("result");
+  }
+};
 
   return (
     <div className="pt-24 px-6 min-h-screen text-center">

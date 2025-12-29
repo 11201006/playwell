@@ -18,6 +18,8 @@ export default function VisualSearch() {
   const visualReadyAtRef = useRef(null);
   const inputLockedRef = useRef(false);
 
+  const isGuest = !localStorage.getItem("access_token");
+
   const start = () => {
     setReactionTimes([]);
     setCurrent(0);
@@ -58,20 +60,27 @@ export default function VisualSearch() {
   };
 
   const submitSession = async (events) => {
-    if (submitted) return;
-    setSubmitted(true);
-    setStatus("loading");
+  if (submitted) return;
+  setSubmitted(true);
+  setStatus("loading");
 
-    const rawAvg =
-  events.length > 0
-    ? Math.round(events.reduce((a, b) => a + b, 0) / events.length)
-    : null;
-    
-    const avg = rawAvg ? Math.round(rawAvg / 3) : null;
+  const rawAvg =
+    events.length > 0
+      ? events.reduce((a, b) => a + b, 0) / events.length
+      : null;
 
-    try {
-      const res = await api.post("/game/submit", {
-        userId: localStorage.getItem("user_id"),
+  const avg = rawAvg ? Math.round(rawAvg / 3) : null;
+
+  try {
+    let res;
+
+    if (isGuest) {
+      res = await api.post("/game/predict", {
+        reaction_avg: avg,
+        memory_score: null,
+      });
+    } else {
+      res = await api.post("/game/submit", {
         gameType: "Visual Search",
         reaction_avg: avg,
         memory_score: null,
@@ -81,31 +90,30 @@ export default function VisualSearch() {
           motorLatencyBuffer: MOTOR_LATENCY_BUFFER,
         },
       });
-
-      const recommendations = Array.isArray(res.data.recommendations)
-        ? res.data.recommendations
-        : [res.data.recommendations || ""];
-
-      setResult({
-        stress_level: res.data.stress_level,
-        cognitive_score:
-          res.data.cognitive_score ??
-          res.data.focus_score ??
-          avg,
-        recommendations,
-      });
-
-      setStatus("result");
-    } catch (err) {
-      console.error(err);
-      setResult({
-        stress_level: "unknown",
-        cognitive_score: null,
-        recommendations: ["Submit failed"],
-      });
-      setStatus("result");
     }
-  };
+
+    setResult({
+      stress_level: res.data.stress_level,
+      cognitive_score:
+        res.data.cognitive_score ??
+        res.data.focus_score ??
+        avg,
+      recommendations: Array.isArray(res.data.recommendations)
+        ? res.data.recommendations
+        : [res.data.recommendations || ""],
+    });
+
+    setStatus("result");
+  } catch (err) {
+    console.error(err);
+    setResult({
+      stress_level: "unknown",
+      cognitive_score: null,
+      recommendations: ["Submit failed"],
+    });
+    setStatus("result");
+  }
+};
 
   return (
     <div className="pt-24 px-6 min-h-screen text-center">

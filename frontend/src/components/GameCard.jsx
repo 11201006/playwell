@@ -52,7 +52,6 @@ export default function GameCard({
             Try Without Login
           </Link>
         ) : (
-          // Kalau sudah login, tombol Play biasa
           <Link
             to={locked ? "#" : link}
             className={`inline-block px-4 py-2 text-white rounded-full 

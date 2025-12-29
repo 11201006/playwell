@@ -22,6 +22,7 @@ export default function StroopTest() {
   const [result, setResult] = useState(null);
   const [display, setDisplay] = useState({ word: "", color: "" });
   const [correctCount, setCorrectCount] = useState(0);
+  const isGuest = !localStorage.getItem("access_token");
 
   const visualReadyAtRef = useRef(null);
   const inputLockedRef = useRef(false);
@@ -73,24 +74,31 @@ export default function StroopTest() {
   };
 
   const submitSession = async (events) => {
-    if (submitted) return;
-    setSubmitted(true);
-    setStatus("loading");
+  if (submitted) return;
+  setSubmitted(true);
+  setStatus("loading");
 
-    const rawAvgReaction =
+  const rawAvgReaction =
     events.length > 0
-    ? events.reduce((a, b) => a + b, 0) / events.length
-    : null;
-    
-    const avgReaction = rawAvgReaction
+      ? events.reduce((a, b) => a + b, 0) / events.length
+      : null;
+
+  const avgReaction = rawAvgReaction
     ? Math.round(rawAvgReaction / 6)
     : null;
 
-    const memoryScore = Math.round((correctCount / rounds) * 100);
+  const memoryScore = Math.round((correctCount / rounds) * 100);
 
-    try {
-      const res = await api.post("/game/submit", {
-        userId: localStorage.getItem("user_id"),
+  try {
+    let res;
+
+    if (isGuest) {
+      res = await api.post("/game/predict", {
+        reaction_avg: avgReaction,
+        memory_score: memoryScore,
+      });
+    } else {
+      res = await api.post("/game/submit", {
         gameType: "Stroop Test",
         reaction_avg: avgReaction,
         memory_score: memoryScore,
@@ -102,31 +110,30 @@ export default function StroopTest() {
           motorLatencyBuffer: MOTOR_LATENCY_BUFFER,
         },
       });
-
-      const recommendations = Array.isArray(res.data.recommendations)
-        ? res.data.recommendations
-        : [res.data.recommendations || ""];
-
-      setResult({
-        stress_level: res.data.stress_level,
-        cognitive_score:
-          res.data.cognitive_score ??
-          res.data.focus_score ??
-          avgReaction,
-        recommendations,
-      });
-
-      setStatus("result");
-    } catch (err) {
-      console.error(err);
-      setResult({
-        stress_level: "unknown",
-        cognitive_score: null,
-        recommendations: ["Submit failed"],
-      });
-      setStatus("result");
     }
-  };
+
+    setResult({
+      stress_level: res.data.stress_level,
+      cognitive_score:
+        res.data.cognitive_score ??
+        res.data.focus_score ??
+        avgReaction,
+      recommendations: Array.isArray(res.data.recommendations)
+        ? res.data.recommendations
+        : [res.data.recommendations || ""],
+    });
+
+    setStatus("result");
+  } catch (err) {
+    console.error(err);
+    setResult({
+      stress_level: "unknown",
+      cognitive_score: null,
+      recommendations: ["Submit failed"],
+    });
+    setStatus("result");
+  }
+};
 
   return (
     <div className="pt-24 px-6 min-h-screen text-center">

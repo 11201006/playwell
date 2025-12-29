@@ -59,19 +59,40 @@ def build_model_input(reaction, memory, age, gender):
         "Gender": normalize_gender(gender),
     }])
 
+import random
 
 def generate_recommendations(stress, cognitive):
+    HIGH_STRESS = [
+        "Take a short break and focus on slow, deep breathing to reset your mind.",
+        "Your responses suggest mental fatigue — stepping away for a few minutes may help.",
+        "Consider reducing distractions and trying again when you feel calmer.",
+        "A brief pause and relaxation can significantly improve your next performance.",
+        "It’s okay to slow down — give yourself time to recover before continuing."
+    ]
+
+    MEDIUM_STRESS = [
+        "You’re doing fairly well, but a short rest could help sharpen your focus.",
+        "Try a brief focus or breathing exercise before your next session.",
+        "Repeating the task once more may help improve consistency.",
+        "Your performance is stable — staying relaxed can help you do even better.",
+        "Maintaining a calm pace will likely improve your results."
+    ]
+
+    LOW_STRESS = [
+        "Great work — your focus and reaction seem well balanced.",
+        "You’re performing consistently — keep up the good rhythm.",
+        "Your current state shows strong cognitive control. Well done!",
+        "Excellent performance — continuing regular practice can help maintain this level.",
+        "You appear relaxed and focused — this is an ideal performance state."
+    ]
+
     if stress == "high" or cognitive < 40:
-        return [
-            "Take a 5–10 minute break and do breathing exercises.",
-            "Reduce distractions and retry shorter sessions."
-        ]
+        return random.choice(HIGH_STRESS)
+
     elif stress == "medium" or cognitive < 70:
-        return [
-            "Try a short focus exercise (5 minutes).",
-            "Repeat the game to build familiarity."
-        ]
-    return ["Great job — keep practicing to improve further!"]
+        return random.choice(MEDIUM_STRESS)
+
+    return random.choice(LOW_STRESS)
 
 @game_bp.route("/game/predict", methods=["POST"])
 def predict_game():

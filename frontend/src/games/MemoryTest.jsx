@@ -15,6 +15,8 @@ export default function MemoryTest() {
 
   const colors = ["red", "green", "blue", "yellow", "purple", "orange"];
 
+  const isGuest = !localStorage.getItem("access_token");
+
   const start = () => {
     setSequence([]);
     setUserSequence([]);
@@ -42,44 +44,55 @@ export default function MemoryTest() {
   };
 
   const submitSession = async (userSeq) => {
-    if (submitted) return;
-    setSubmitted(true);
-    setStatus("loading");
+  if (submitted) return;
+  setSubmitted(true);
+  setStatus("loading");
 
-    const score = userSeq.filter((c, i) => c === sequence[i]).length;
+  const score = userSeq.filter((c, i) => c === sequence[i]).length;
+  const memoryScore = score * 20;
 
-    try {
-      const res = await api.post("/game/submit", {
-        userId: localStorage.getItem("user_id"),
+  try {
+    let res;
+
+    if (isGuest) {
+      res = await api.post("/game/predict", {
+        reaction_avg: null,
+        memory_score: memoryScore,
+      });
+    } else {
+      res = await api.post("/game/submit", {
         gameType: "Memory Test",
         reaction_avg: null,
-        memory_score: score * 20,
+        memory_score: memoryScore,
         durationMs: 1000 * sequence.length,
         meta: { sequence, userSeq },
       });
-
-      const recommendations = Array.isArray(res.data.recommendations)
-        ? res.data.recommendations
-        : [res.data.recommendations || ""];
-
-      setResult({
-        stress_level: res.data.stress_level,
-        cognitive_score:
-          res.data.cognitive_score ?? res.data.focus_score ?? score * 20,
-        recommendations,
-      });
-
-      setStatus("result");
-    } catch (err) {
-      console.error(err);
-      setResult({
-        stress_level: "unknown",
-        cognitive_score: null,
-        recommendations: ["Submit failed"],
-      });
-      setStatus("result");
     }
-  };
+
+    const recommendations = Array.isArray(res.data.recommendations)
+      ? res.data.recommendations
+      : [res.data.recommendations || ""];
+
+    setResult({
+      stress_level: res.data.stress_level,
+      cognitive_score:
+        res.data.cognitive_score ??
+        res.data.focus_score ??
+        memoryScore,
+      recommendations,
+    });
+
+    setStatus("result");
+  } catch (err) {
+    console.error(err);
+    setResult({
+      stress_level: "unknown",
+      cognitive_score: null,
+      recommendations: ["Submit failed"],
+    });
+    setStatus("result");
+  }
+};
 
   useEffect(() => {
     if (status === "showing" && sequence.length > 0) {

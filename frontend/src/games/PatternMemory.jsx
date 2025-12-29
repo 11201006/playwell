@@ -11,6 +11,7 @@ export default function PatternMemory() {
   const [rounds, setRounds] = useState(3);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
+  const isGuest = !localStorage.getItem("access_token");
 
   const size = 4;
 
@@ -33,48 +34,59 @@ export default function PatternMemory() {
   };
 
   const submitSession = async () => {
-    if (submitted) return;
-    setSubmitted(true);
-    setStatus("loading");
+  if (submitted) return;
+  setSubmitted(true);
+  setStatus("loading");
 
-    const correct = grid.reduce(
-      (acc, val, idx) => acc + (val === userGrid[idx] ? 1 : 0),
-      0
-    );
+  const correct = grid.reduce(
+    (acc, val, idx) => acc + (val === userGrid[idx] ? 1 : 0),
+    0
+  );
 
-    const score = Math.round((correct / grid.length) * 100);
+  const score = Math.round((correct / grid.length) * 100);
 
-    try {
-      const res = await api.post("/game/submit", {
-        userId: localStorage.getItem("user_id"),
+  try {
+    let res;
+
+    if (isGuest) {
+      res = await api.post("/game/predict", {
+        reaction_avg: null,
+        memory_score: score,
+      });
+    } else {
+      res = await api.post("/game/submit", {
         gameType: "Pattern Memory",
         reaction_avg: null,
         memory_score: score,
         durationMs: 1000 * grid.length,
         meta: { grid, userGrid },
       });
-
-      const recommendations = Array.isArray(res.data.recommendations)
-        ? res.data.recommendations
-        : [res.data.recommendations || ""];
-
-      setResult({
-        stress_level: res.data.stress_level,
-        cognitive_score: res.data.cognitive_score ?? res.data.focus_score ?? score,
-        recommendations,
-      });
-
-      setStatus("result");
-    } catch (err) {
-      console.error(err);
-      setResult({
-        stress_level: "unknown",
-        cognitive_score: null,
-        recommendations: ["Submit failed"],
-      });
-      setStatus("result");
     }
-  };
+
+    const recommendations = Array.isArray(res.data.recommendations)
+      ? res.data.recommendations
+      : [res.data.recommendations || ""];
+
+    setResult({
+      stress_level: res.data.stress_level,
+      cognitive_score:
+        res.data.cognitive_score ??
+        res.data.focus_score ??
+        score,
+      recommendations,
+    });
+
+    setStatus("result");
+  } catch (err) {
+    console.error(err);
+    setResult({
+      stress_level: "unknown",
+      cognitive_score: null,
+      recommendations: ["Submit failed"],
+    });
+    setStatus("result");
+  }
+};
 
   useEffect(() => {
     if (status === "showing") {

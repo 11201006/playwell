@@ -21,6 +21,8 @@ export default function DualTask() {
   const visualReadyAtRef = useRef(null);
   const inputLockedRef = useRef(false);
 
+  const isGuest = new URLSearchParams(window.location.search).get("guest") === "true";
+
   const start = () => {
     setReactionTimes([]);
     setMemorySequence([]);
@@ -98,41 +100,51 @@ const avgReaction = rawAvgReaction
     );
 
     try {
-      const res = await api.post("/game/submit", {
-        userId: localStorage.getItem("user_id"),
-        gameType: "Dual Task",
-        reaction_avg: avgReaction,
-        memory_score: memoryScore,
-        durationMs: reactionTimes.reduce((a, b) => a + b, 0),
-        meta: {
-          reactionTimes,
-          memorySequence,
-          userMemoryInput,
-          motorLatencyBuffer: MOTOR_LATENCY_BUFFER,
-        },
-      });
+  const payload = {
+    reaction_avg: avgReaction,
+    memory_score: memoryScore,
+  };
 
-      setResult({
-        stress_level: res.data.stress_level,
-        cognitive_score:
-          res.data.cognitive_score ??
-          res.data.focus_score ??
-          avgReaction,
-        recommendations: Array.isArray(res.data.recommendations)
-          ? res.data.recommendations
-          : [res.data.recommendations || ""],
-      });
+  let res;
 
-      setStatus("result");
-    } catch (err) {
-      console.error(err);
-      setResult({
-        stress_level: "unknown",
-        cognitive_score: null,
-        recommendations: ["Submit failed"],
-      });
-      setStatus("result");
-    }
+  if (isGuest) {
+    
+    res = await api.post("/game/predict", payload);
+  } else {
+    res = await api.post("/game/submit", {
+      ...payload,
+      gameType: "Dual Task",
+      durationMs: reactionTimes.reduce((a, b) => a + b, 0),
+      meta: {
+        reactionTimes,
+        memorySequence,
+        userMemoryInput,
+        motorLatencyBuffer: MOTOR_LATENCY_BUFFER,
+      },
+    });
+  }
+
+  setResult({
+    stress_level: res.data.stress_level,
+    cognitive_score:
+      res.data.cognitive_score ??
+      res.data.focus_score ??
+      avgReaction,
+    recommendations: Array.isArray(res.data.recommendations)
+      ? res.data.recommendations
+      : [res.data.recommendations || ""],
+  });
+
+  setStatus("result");
+} catch (err) {
+  console.error(err);
+  setResult({
+    stress_level: "unknown",
+    cognitive_score: null,
+    recommendations: ["Submit failed"],
+  });
+  setStatus("result");
+}
   };
 
   return (
