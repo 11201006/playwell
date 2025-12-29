@@ -17,8 +17,8 @@ export default function VisualSearch() {
 
   const visualReadyAtRef = useRef(null);
   const inputLockedRef = useRef(false);
-
-  const isGuest = !localStorage.getItem("access_token");
+  
+  const isGuest = new URLSearchParams(window.location.search).get("guest") === "true";
 
   const start = () => {
     setReactionTimes([]);

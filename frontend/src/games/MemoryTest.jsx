@@ -15,7 +15,7 @@ export default function MemoryTest() {
 
   const colors = ["red", "green", "blue", "yellow", "purple", "orange"];
 
-  const isGuest = !localStorage.getItem("access_token");
+  const isGuest = new URLSearchParams(window.location.search).get("guest") === "true";
 
   const start = () => {
     setSequence([]);

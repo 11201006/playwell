@@ -11,7 +11,7 @@ export default function PatternMemory() {
   const [rounds, setRounds] = useState(3);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
-  const isGuest = !localStorage.getItem("access_token");
+  const isGuest = new URLSearchParams(window.location.search).get("guest") === "true";
 
   const size = 4;
 

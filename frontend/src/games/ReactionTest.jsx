@@ -28,7 +28,7 @@ export default function ReactionTest() {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
-  const isGuest = !localStorage.getItem("access_token");
+  const isGuest = new URLSearchParams(window.location.search).get("guest") === "true";
 
   const timeoutRef = useRef(null);
 

@@ -22,7 +22,7 @@ export default function StroopTest() {
   const [result, setResult] = useState(null);
   const [display, setDisplay] = useState({ word: "", color: "" });
   const [correctCount, setCorrectCount] = useState(0);
-  const isGuest = !localStorage.getItem("access_token");
+  const isGuest = new URLSearchParams(window.location.search).get("guest") === "true";
 
   const visualReadyAtRef = useRef(null);
   const inputLockedRef = useRef(false);
