@@ -43,7 +43,7 @@ export default function Profile() {
 
     try {
       const uid = localStorage.getItem("user_id");
-      const res = await api.put(`/user/profile/${uid}`, form);
+      const res = await api.put(`/user/update/${uid}`, form);
 
       setProfile(res.data.user);
       setEditMode(false);
